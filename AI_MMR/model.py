@@ -50,8 +50,8 @@ class Multifusion(nn.Module): # Basic MLP Model
 
 
 class MultiLSTM(nn.Module): # Bi-LSTM Model
-    def
-
+    def hi(self):
+        return None
 
 
     
