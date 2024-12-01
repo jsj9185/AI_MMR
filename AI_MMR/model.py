@@ -6,59 +6,21 @@ from PIL import Image
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 
-image = preprocess(Image.open("dog.jpg")).unsqueeze(0).to(device)
-image2 = preprocess(Image.open("dog.jpg")).unsqueeze(0).to(device)
-text = clip.tokenize(["a dog"]).to(device)
-prices, likes = 3000, 5
-meta = torch.tensor([prices, likes], dtype=torch.float32).unsqueeze(0).to(device)
-
-
+# image = preprocess(Image.open("dog.jpg")).unsqueeze(0).to(device)
+# image2 = preprocess(Image.open("dog.jpg")).unsqueeze(0).to(device)
+# text = clip.tokenize(["a dog"]).to(device)
+# prices, likes = 3000, 5
+# meta = torch.tensor([prices, likes], dtype=torch.float32).unsqueeze(0).to(device)
 # image => [1, 3, 224, 224]  => (CLIP feature extractor) => [1, 512] 
 # text (word-wise token embedding) => [1, 77] => (CLIP feature extractor) => [1, 512]
 # prices, likes => [1, 2] => (MLP) => [1, 512]
-
 # fused feature [3, 512] = [[image feature], [text feature], [price & like feature]]
-
-class net(nn.Module):
-  def __init__(self, clip_model):
-    super(Net, self).__init__()
-    ##### TODO #####
-    self.encode_image = clip_model.encode_image
-    self.encode_text  = clip_model.encode_text
-
-    self.encode_meta = nn.Linear(2, 512, bias=True)
-        
-    self.ffn = nn.Linear(512 * 3 , 512)
-    
-  def forward(self, image, text, metas):
-    ##### TODO #####
-     # 각각의 특징 추출
-    image_feature = self.encode_image(image)   # [batch_size,  512]
-    text_feature  = self.encode_text(text)     # [batch_size,  512]
-    meta_feature  = self.encode_meta(metas)    # [batch_size,  512]
-    
-    batch_size = image_feature.shape[0]
-    # 특징들을 concatenate
-    fused_feature = torch.cat((image_feature, text_feature, meta_feature), dim=1)  # [batch_size, 3, 512]
-    fused_vec   = fused_feature.view(batch_size, -1)    # [batch_size, 512 * 3]
-    # FFN을 통과
-    out = self.ffn(fused_vec)  # [batch_size, 512]
-    return out
-
-
-net = Net(model).to(device)
-# images = torch.cat((image, image2), dim=0)
-fused_output = net(image, text, meta)
-
-print("=======Fusion output=======")
-print("shape : {}".format(fused_output.shape))
-print("===========================")
 
 import torch
 import torch.nn as nn
 from transformers import BertModel
 
-class Multifusion(nn.Module):
+class Multifusion(nn.Module): # Basic MLP Model
   def __init__(self):
     super(Multifusion, self).__init__()
     ##### TODO #####
@@ -86,6 +48,13 @@ class Multifusion(nn.Module):
     print("model end")
     return out
 
+
+class MultiLSTM(nn.Module): # Bi-LSTM Model
+    def
+
+
+
+    
 class MultiModalModel(nn.Module):
     """
     PyTorch implementation of the Polyvore Model for fashion compatibility tasks.
