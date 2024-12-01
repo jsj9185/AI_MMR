@@ -50,10 +50,19 @@ class Multifusion(nn.Module): # Basic MLP Model
 
 
 class MultiLSTM(nn.Module): # Bi-LSTM Model
-    def hi(self):
+    def __init__(self, config, mode):
+        super(MultiLSTM, self).__init__()
+
+
         return None
 
 
+class MultiBERT(nn.Module): # BERT based Model
+    def __init__(self, config, mode):
+        super(MultiBERT, self).__init__()
+
+
+        return None
     
 class MultiModalModel(nn.Module):
     """
