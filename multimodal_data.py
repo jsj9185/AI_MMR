@@ -6,7 +6,6 @@ import os
 import clip
 import random
 
-from torchvision import transforms
 class MultiModalData(Dataset):
     def __init__(self, data_df, category_df, image_dir, question=None, mode='train'):
         self.mode = mode
@@ -72,20 +71,17 @@ class MultiModalData(Dataset):
         text_list = text_list[:max_length]  
         images = images[:max_length]  
 
-
-        # 길이 부족시 padding 채움
-        # 일단 패딩이 추가된다고 하면, max_length idx부터 추가가 됨.
-        # if max_length < 8:
-        #     padding = torch.zeros(8 - max_length, 512)
-        #     texts = torch.cat((texts, padding), dim=0)
-        #     images = torch.cat((images, padding), dim=0)
-        #     price_list += [-1] * (8 - max_length)
-        #     likes_list += [-1] * (8 - max_length)
+        if max_length < 8: # Padding
+            padding = torch.zeros(8 - max_length, 512).to(self.device)
+            texts = torch.cat((texts, padding), dim=0)
+            images = torch.cat((images, padding), dim=0)
+            price_list += [-1] * (8 - max_length)
+            likes_list += [-1] * (8 - max_length)
         
         
-        # L, D = texts.shape
-        # print(L)
-        # assert(L == 8)
+        L, D = texts.shape
+        print(L)
+        assert(L == 8)
 
         question = []
         gt_idx = random.randint(0, max_length-1)
