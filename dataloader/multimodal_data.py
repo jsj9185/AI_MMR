@@ -117,17 +117,18 @@ class MultiModalData(Dataset):
                 'gt_idx' : gt_idx #for gt select and train
             }
         
-        return {
-            'texts': texts_sliced,
-            'text_gt': text_gt,
-            'prices': prices,
-            'likes': likes,
-            'images': images_sliced, 
-            'image_gt': image_gt,
-            'set_id': set_id,
-            'valid_idx': max_length-1,
-            'gt_idx' : gt_idx
-        }
+        else:
+            return {
+                'texts': texts_sliced,
+                'text_gt': text_gt,
+                'prices': prices,
+                'likes': likes,
+                'images': images_sliced, 
+                'image_gt': image_gt,
+                'set_id': set_id,
+                'valid_idx': max_length-1,
+                'gt_idx' : gt_idx
+            }
 
 
 
