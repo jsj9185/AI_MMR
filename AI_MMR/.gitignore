@@ -1,1 +1,5 @@
-data/
+/*
+!/AI_MMR/
+!/AI_MMR/*
+/data
+!*.py

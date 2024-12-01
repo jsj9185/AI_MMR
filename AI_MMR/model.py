@@ -23,14 +23,12 @@ from transformers import BertModel
 class Multifusion(nn.Module): # Basic MLP Model
   def __init__(self):
     super(Multifusion, self).__init__()
-    ##### TODO #####
     self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     self.ffn_image = nn.Linear(512 * 7, 512)
     self.ffn_text = nn.Linear(512 * 7, 512)
     
   def forward(self, image_embedding, text_embedding):
-    ##### TODO #####
     print("model start")
     batch = image_embedding.shape[0]
     
