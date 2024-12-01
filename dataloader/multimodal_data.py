@@ -17,6 +17,7 @@ class MultiModalData(Dataset):
         model, preprocess = clip.load("ViT-B/32", device=self.device)
         self.preprocess = preprocess
         self.model = model
+        self.set_id_search_dict = {row['set_id']: idx for idx, row in self.data_df.iterrows()}
     
     def preprocess_images(self, image_list): # for clip preprocess
         processed_images = [self.preprocess(image).unsqueeze(0) for image in image_list]
@@ -65,13 +66,13 @@ class MultiModalData(Dataset):
         texts = self.model.encode_text(text_input)
         image_tensor = self.preprocess_images(images).to(self.device)
         images = self.model.encode_image(image_tensor)
-
+        
         # 이미지 시퀀스 길이 맞춰주기
         max_length = min(len(text_list), len(images))
         text_list = text_list[:max_length]  
         images = images[:max_length]  
 
-        if max_length < 8: # Padding
+        if max_length < 8:
             padding = torch.zeros(8 - max_length, 512).to(self.device)
             texts = torch.cat((texts, padding), dim=0)
             images = torch.cat((images, padding), dim=0)
@@ -80,55 +81,56 @@ class MultiModalData(Dataset):
         
         
         L, D = texts.shape
-        print(L)
-        assert(L == 8)
 
+        assert(L == 8)
+        
         question = []
         gt_idx = random.randint(0, max_length-1)
-        
-        texts_sliced = torch.cat((texts[ : gt_idx, :] , texts[ gt_idx+1:, :]), dim=0)
-        images_sliced = torch.cat((images[ : gt_idx, :] , images[ gt_idx+1:, :]), dim=0)
-        
-        text_gt = texts[gt_idx, :]
-        image_gt = images[gt_idx, :]
+        if self.mode == 'train':
+            texts_sliced = torch.cat((texts[ : gt_idx, :] , texts[ gt_idx+1:, :]), dim=0)
+            images_sliced = torch.cat((images[ : gt_idx, :] , images[ gt_idx+1:, :]), dim=0)
+            text_gt = texts[gt_idx, :]
+            image_gt = images[gt_idx, :]
+            
         prices = torch.tensor(price_list)
         likes = torch.tensor(likes_list)
         
         if self.mode == 'test' and self.question is not None:
             filtered_question = self.question[self.question['set_id'] == set_id]
+            question_data ={}
             for _, row in filtered_question.iterrows():
+                
                 question_data = {
-                    'question_ids': row['question'],  
+                    'question_ids': row['question'],  # 얘도 사실 필요없다.
                     'answer': row['answers'], 
                     'blank_position': row['blank_position']
                 }
-                question.append(question_data)
+                #question.append(question_data)
+            
+            self.set_id_search_dict[set_id] = idx
             
             return {
-                'texts': texts_sliced,
-                'text_gt': text_gt,
+                'texts': texts.float(),
                 'prices': prices,
                 'likes': likes,
-                'images': images_sliced, 
-                'image_gt': image_gt,
+                'images': images.float(), 
                 'set_id': set_id, 
-                'question': question,
+                'question': question_data,
                 'valid_idx' : max_length-1,
                 'gt_idx' : gt_idx #for gt select and train
             }
         
-        else:
-            return {
-                'texts': texts_sliced,
-                'text_gt': text_gt,
-                'prices': prices,
-                'likes': likes,
-                'images': images_sliced, 
-                'image_gt': image_gt,
-                'set_id': set_id,
-                'valid_idx': max_length-1,
-                'gt_idx' : gt_idx
-            }
+        return {
+            'texts': texts_sliced.float(),
+            'text_gt': text_gt.float(),
+            'prices': prices,
+            'likes': likes,
+            'images': images_sliced.float(), 
+            'image_gt': image_gt.float(),
+            'set_id': set_id,
+            'valid_idx': max_length-1,
+            'gt_idx' : gt_idx
+        }
 
 
 

@@ -245,8 +245,6 @@ print("Model saved to multibert_model_epoch50.pth")
 
 
 
-
-
 class MultiModalModel(nn.Module):
     """
     PyTorch implementation of the Polyvore Model for fashion compatibility tasks.
