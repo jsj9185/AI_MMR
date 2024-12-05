@@ -18,11 +18,11 @@ test = pd.read_json(path + 'test_no_dup.json')
 blank = pd.read_json(path + 'fill_in_blank_test.json')
 
 
-base_dir = ''
+base_dir = os.getcwd()
 data_dir = os.path.join(base_dir, 'data')
 meta_dir = os.path.join(data_dir, 'meta')
 image_dir = os.path.join(data_dir, 'images')
-sampler = DataSampler(data_path = meta_dir,  test_sampling_ratio=0.33)
+sampler = DataSampler(data_path = meta_dir, k=150,  test_sampling_ratio=1)
 concat_df, question_data = sampler.sample_data()
 
 
