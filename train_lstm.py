@@ -127,6 +127,7 @@ def main():
 
     sampler = DataSampler(data_path=meta_dir, k=40, test_sampling_ratio=1)
     concat_df, question_data = sampler.sample_data()
+    concat_df = concat_df.iloc[1:, :]
 
     train_dataset = MultiModalData(concat_df, sampler.category_df, image_dir, mode='train')
     valid_dataset = MultiModalData(concat_df, sampler.category_df, image_dir, mode='valid')
@@ -142,6 +143,11 @@ def main():
 
     # 학습 루프
     best_loss = 1000.0
+    current_time = datetime.now().strftime("%m%d%H%M")
+    checkpoints_dir = os.path.join(base_dir, 'checkpoints')
+    checkpoint_dir = os.path.join(checkpoints_dir, f'checkpoint_{current_time}')
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
     for epoch in range(config.num_epochs):
         train_loss = train(model, train_dataloader, optimizer, device)
         print(f"Epoch [{epoch + 1}/{config.num_epochs}], Training Loss: {train_loss:.4f}")
@@ -152,11 +158,6 @@ def main():
         # 모델 체크포인트 저장
         if valid_loss < best_loss:
             best_loss = valid_loss
-            current_time = datetime.now().strftime("%m%d%H%M")
-            
-            checkpoints_dir = os.path.join(base_dir, 'checkpoints')
-            checkpoint_dir = os.path.join(checkpoints_dir, f'checkpoint_{current_time}')
-            os.makedirs(checkpoint_dir, exist_ok=True)
             torch.save(
                 {
                     'epoch': epoch + 1,

@@ -88,7 +88,7 @@ class PolyvoreLSTMModel(nn.Module):
         # 총 손실 계산
         total_loss = self.contrastive_loss_factor * contrastive_loss + forward_loss + backward_loss
         #print(contrastive_loss, forward_loss, backward_loss, num_rnn_samples)
-        print(rnn_output_embeddings.shape)
+        #print(rnn_output_embeddings.shape)
         return total_loss
 
 
