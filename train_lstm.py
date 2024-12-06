@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 import os
+from datetime import datetime
 from dataloader.sampling import DataSampler
 from dataloader.multilstm_data import MultiModalData
 from model.multilstm import PolyvoreLSTMModel
@@ -17,7 +18,7 @@ class Config:
     num_layers = 1
     dropout = 0.5
     learning_rate = 0.001
-    num_epochs = 2
+    num_epochs = 10
     batch_size = 16
     contrastive_loss_factor = 1.0
 
@@ -102,7 +103,7 @@ def validate(model, dataloader, device):
 def main():
     config = Config()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    print("################ Code Start ################")
     # 모델 초기화
     model = PolyvoreLSTMModel(
         embedding_size=config.embedding_size,
@@ -122,9 +123,9 @@ def main():
     data_dir = os.path.join(base_dir, 'data')
     meta_dir = os.path.join(data_dir, 'meta')
     image_dir = os.path.join(data_dir, 'images')
-    print("Trial 3")
+    #print("Trial 4")
 
-    sampler = DataSampler(data_path=meta_dir, k=10, test_sampling_ratio=1)
+    sampler = DataSampler(data_path=meta_dir, k=40, test_sampling_ratio=1)
     concat_df, question_data = sampler.sample_data()
 
     train_dataset = MultiModalData(concat_df, sampler.category_df, image_dir, mode='train')
@@ -135,11 +136,12 @@ def main():
         train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn
     )
     valid_dataloader = DataLoader(
-        valid_dataset, batch_size=config.batch_size, shuffle=False, collate_fn=collate_fn
+        valid_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn
     )
     print("################ Train Start ################\n")
 
     # 학습 루프
+    best_loss = 1000.0
     for epoch in range(config.num_epochs):
         train_loss = train(model, train_dataloader, optimizer, device)
         print(f"Epoch [{epoch + 1}/{config.num_epochs}], Training Loss: {train_loss:.4f}")
@@ -150,15 +152,21 @@ def main():
         # 모델 체크포인트 저장
         if valid_loss < best_loss:
             best_loss = valid_loss
-            checkpoint_path = os.path.join(base_dir, f'checkpoint_{epoch+1}')
+            current_time = datetime.now().strftime("%m%d%H%M")
+            
+            checkpoints_dir = os.path.join(base_dir, 'checkpoints')
+            checkpoint_dir = os.path.join(checkpoints_dir, f'checkpoint_{current_time}')
+            os.makedirs(checkpoint_dir, exist_ok=True)
             torch.save(
-                {'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': train_loss}, 
-                os.path.join(checkpoint_path, "latest_checkpoint.pth"))
-            print(f"Checkpoint saved to {checkpoint_path}\n")
-
+                {
+                    'epoch': epoch + 1,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': train_loss
+                }, 
+                os.path.join(checkpoint_dir, "best_checkpoint.pth")
+            )
+            print(f"Checkpoint saved to {checkpoint_dir}\n")
 
 if __name__ == '__main__':
     main()

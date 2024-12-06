@@ -80,14 +80,15 @@ class PolyvoreLSTMModel(nn.Module):
 
         # Forward/Backward Loss 계산 및 정규화
         forward_loss, backward_loss = self.compute_rnn_loss(rnn_output_embeddings, mask)
-        num_rnn_samples = (mask[:, :-1].bool() & mask[:, 1:].bool()).sum().item()  # Forward/Backward Loss에서 유효 샘플 수
-        if num_rnn_samples > 0:
-            forward_loss /= num_rnn_samples
-            backward_loss /= num_rnn_samples
+        # num_rnn_samples = (mask[:, :-1].bool() & mask[:, 1:].bool()).sum().item()  # Forward/Backward Loss에서 유효 샘플 수
+        # if num_rnn_samples > 0:
+        #     forward_loss /= num_rnn_samples
+        #     backward_loss /= num_rnn_samples
 
         # 총 손실 계산
         total_loss = self.contrastive_loss_factor * contrastive_loss + forward_loss + backward_loss
-        print(contrastive_loss, forward_loss, backward_loss, num_rnn_samples)
+        #print(contrastive_loss, forward_loss, backward_loss, num_rnn_samples)
+        print(rnn_output_embeddings.shape)
         return total_loss
 
 
