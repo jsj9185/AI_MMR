@@ -40,27 +40,22 @@ class PolyvoreLSTMModel(nn.Module):
         image_embeddings_normalized = F.normalize(image_embeddings, p=2, dim=2)
         text_embeddings_normalized = F.normalize(text_embeddings, p=2, dim=2)
 
-        # forward pass
+        # Forward pass
         forward_out = self._run_lstm_forward(image_embeddings, text_embeddings, lengths)
 
-        if self.mode == 'train':
-            # backward pass: 시퀀스를 reverse하여 LSTM 통과 후 다시 reverse
-            rev_image = self._reverse_seq(image_embeddings, lengths)
-            rev_text = self._reverse_seq(text_embeddings, lengths)
-            backward_out = self._run_lstm_forward(rev_image, rev_text, lengths)
-            backward_out = self._reverse_seq(backward_out, lengths)
-        else:
-            # inference 모드에서는 backward 사용 안함
-            bsz, seq_len, _ = forward_out.size()
-            backward_out = torch.zeros(bsz, seq_len, self.hidden_dim, device=forward_out.device)
+        # Backward pass
+        rev_image = self._reverse_seq(image_embeddings, lengths)
+        rev_text = self._reverse_seq(text_embeddings, lengths)
+        backward_out = self._run_lstm_forward(rev_image, rev_text, lengths)
+        backward_out = self._reverse_seq(backward_out, lengths)
 
-        # forward_out과 backward_out concat
+        # Combine forward and backward outputs
         combined_out = torch.cat([forward_out, backward_out], dim=2)
         rnn_output_embeddings = F.normalize(self.fc(combined_out), p=2, dim=2)
 
         if self.mode == 'train':
-            # train 모드에서 loss 계산
-            assert mask is not None, "train 모드에서는 mask 필요"
+            # Compute loss during training
+            assert mask is not None, "Train mode requires mask"
             total_loss = self.compute_total_loss(
                 rnn_output_embeddings=rnn_output_embeddings,
                 image_embeddings_normalized=image_embeddings_normalized,
@@ -69,14 +64,14 @@ class PolyvoreLSTMModel(nn.Module):
             )
             return rnn_output_embeddings, total_loss
         else:
-            # inference 모드
+            # Inference mode: Return RNN embeddings
             return rnn_output_embeddings
 
     def compute_total_loss(self, rnn_output_embeddings, image_embeddings_normalized, text_embeddings_normalized, mask):
         # Contrastive Loss 계산 및 정규화
-        contrastive_loss = self.compute_contrastive_loss(
-            image_embeddings_normalized, text_embeddings_normalized, mask
-        )
+        # contrastive_loss = self.compute_contrastive_loss(
+        #     image_embeddings_normalized, text_embeddings_normalized, mask
+        # )
 
         # Forward/Backward Loss 계산 및 정규화
         forward_loss, backward_loss = self.compute_rnn_loss(rnn_output_embeddings, mask)
@@ -86,31 +81,31 @@ class PolyvoreLSTMModel(nn.Module):
         #     backward_loss /= num_rnn_samples
 
         # 총 손실 계산
-        total_loss = self.contrastive_loss_factor * contrastive_loss + forward_loss + backward_loss
+        total_loss = forward_loss + backward_loss
         #print(contrastive_loss, forward_loss, backward_loss, num_rnn_samples)
-        print(rnn_output_embeddings.shape)
+        #print(rnn_output_embeddings.shape)
         return total_loss
 
 
-    def compute_contrastive_loss(self, embeddings1, embeddings2, mask):
-        bsz, seq_len, emb_dim = embeddings1.size()
-        mask_flat = mask.view(-1).bool()
+    # def compute_contrastive_loss(self, embeddings1, embeddings2, mask):
+    #     bsz, seq_len, emb_dim = embeddings1.size()
+    #     mask_flat = mask.view(-1).bool()
 
-        emb1_flat = embeddings1.view(-1, emb_dim)[mask_flat]
-        emb2_flat = embeddings2.view(-1, emb_dim)[mask_flat]
+    #     emb1_flat = embeddings1.view(-1, emb_dim)[mask_flat]
+    #     emb2_flat = embeddings2.view(-1, emb_dim)[mask_flat]
 
-        scores = torch.matmul(emb1_flat, emb2_flat.T)
-        diag = scores.diag().unsqueeze(1)
+    #     scores = torch.matmul(emb1_flat, emb2_flat.T)
+    #     diag = scores.diag().unsqueeze(1)
 
-        cost_s = F.relu(self.emb_margin - diag + scores)
-        cost_im = F.relu(self.emb_margin - diag.T + scores)
+    #     cost_s = F.relu(self.emb_margin - diag + scores)
+    #     cost_im = F.relu(self.emb_margin - diag.T + scores)
 
-        identity_mask = torch.eye(cost_s.size(0), device=cost_s.device).bool()
-        cost_s = cost_s.masked_fill(identity_mask, 0)
-        cost_im = cost_im.masked_fill(identity_mask, 0)
+    #     identity_mask = torch.eye(cost_s.size(0), device=cost_s.device).bool()
+    #     cost_s = cost_s.masked_fill(identity_mask, 0)
+    #     cost_im = cost_im.masked_fill(identity_mask, 0)
 
-        loss = (cost_s.sum() + cost_im.sum()) / (cost_s.size(0) ** 2)
-        return loss
+    #     loss = (cost_s.sum() + cost_im.sum()) / (cost_s.size(0) ** 2)
+    #     return loss
 
     def compute_rnn_loss(self, rnn_output_embeddings, mask):
         # Forward loss

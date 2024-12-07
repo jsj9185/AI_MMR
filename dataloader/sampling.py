@@ -62,7 +62,7 @@ class DataSampler:
         self.top_categories = self._get_top_categories(self.train)
         self.train = self._filter_data(self.train)
         self.valid = self._filter_data(self.valid)
-        self.test = self._filter_data(self.test)
+        #self.test = self._filter_data(self.test)
 
         self.train = self.train.sample(frac=self.train_sampling_ratio, random_state=42)
         self.test = self.test.sample(frac=self.test_sampling_ratio, random_state=42)
