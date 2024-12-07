@@ -1,143 +1,129 @@
-
+import os
 import torch
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import pandas as pd
+from dataloader.sampling import DataSampler
+from dataloader.multilstm_data import MultiModalData
+from model.multilstm import PolyvoreLSTMModel
 
-def pick_questions(texts, images, blank_idx):
-    # blank 이전, blank 이후 부분을 이어붙여 blank를 제거한 시퀀스 생성
-    texts_before_blank = texts[:, :blank_idx, :]
-    texts_after_blank = texts[:, blank_idx+1:, :]
-    images_before_blank = images[:, :blank_idx, :]
-    images_after_blank = images[:, blank_idx+1:, :]
-    q_texts = torch.cat((texts_before_blank, texts_after_blank), dim=1)
-    q_images = torch.cat((images_before_blank, images_after_blank), dim=1)
-    return q_texts, q_images
-
-def get_question_embedding(rnn_output_embeddings, blank_idx, direction=2):
+def pick_questions_v3(texts, images, blank_idx):
     """
-    blank_idx: 0-based index of the blank in the original sequence.
-    direction:
-      - 1: forward only
-      - -1: backward only
-      - 2: bidirectional (average)
-    rnn_output_embeddings: [batch, seq_len-1, embedding_size]
-      blank 제거 후의 시퀀스 임베딩 (inference 결과)
-
-    반환값: question_embedding (shape: [batch, embedding_size])
+    blank_idx 기준으로 forward: x_1 ... x_{t-1}
+                        backward: x_{t+1} ... x_N
     """
-    bsz, seq_len, emb_dim = rnn_output_embeddings.size()
+    forward_texts = texts[:, :blank_idx, :]      # x_1 ... x_{t-1}
+    backward_texts = texts[:, blank_idx+1:, :]   # x_{t+1} ... x_N
 
-    # blank가 첫번째 아이템이었다면 blank 제거 후 시퀀스의 첫 아이템이 backward 정보의 핵심
-    # blank가 마지막 아이템이었다면 blank 제거 후 시퀀스의 마지막 아이템이 forward 정보의 핵심
-    # 중간이라면 forward는 blank 이전 마지막 토큰, backward는 blank 이후 첫 토큰 사용
-    # blank 제거 후의 시퀀스에서 blank_idx 기준:
-    #   blank 이전 아이템 개수: blank_idx
-    #   blank 이후 아이템 개수: (원래 길이 - blank_idx - 1)
+    forward_images = images[:, :blank_idx, :]
+    backward_images = images[:, blank_idx+1:, :]
 
-    # forward embedding: blank 이전 마지막 토큰 (blank_idx-1)
-    # backward embedding: blank 이후 첫 번째 토큰 (blank_idx) 
-    # 단, blank가 첫 아이템이면 forward 없음, blank가 마지막 아이템이면 backward 없음
+    return forward_texts, forward_images, backward_texts, backward_images
 
-    # blank가 sequence 시작일 경우: forward 없음 -> backward only
-    # blank가 sequence 끝일 경우: backward 없음 -> forward only
-    # blank가 중간일 경우: 둘 다 존재
-
-    forward_embedding = None
-    backward_embedding = None
-
-    # blank 전 아이템이 1개 이상 있으면 forward 임베딩 추출 가능
-    if blank_idx > 0:
-        forward_embedding = rnn_output_embeddings[:, blank_idx-1, :]  # blank 이전 마지막 아이템
-    # blank 이후 아이템이 1개 이상 있으면 backward 임베딩 추출 가능
-    # blank_idx는 original, 제거 후에도 동일 인덱스로 사용(앞에서 blank 제거 후 시퀀스 구성 시 동일 index)
-    # 사실상 blank_idx 이후 아이템들은 그대로 뒤에 오므로 첫 아이템은 blank_idx 위치
-    if blank_idx < seq_len:
-        backward_embedding = rnn_output_embeddings[:, blank_idx, :]  # blank 이후 첫 아이템
-
-    if direction == 1:
-        # forward only
-        if forward_embedding is not None:
-            return forward_embedding
-        else:
-            # forward 없음 -> fallback backward
-            return backward_embedding
-    elif direction == -1:
-        # backward only
-        if backward_embedding is not None:
-            return backward_embedding
-        else:
-            # backward 없음 -> fallback forward
-            return forward_embedding
-    else:
-        # bidirectional (2)
-        # 둘 다 존재하면 평균, 하나만 존재하면 그거 사용
-        if forward_embedding is not None and backward_embedding is not None:
-            return (forward_embedding + backward_embedding) / 2.0
-        elif forward_embedding is not None:
-            return forward_embedding
-        else:
-            return backward_embedding
-
-def compute_scores(question_embedding, answer_embeddings):
+def compute_probs(context_embedding, candidate_embeddings):
     """
-    question_embedding: [batch, embedding_size]
-    answer_embeddings: [num_answers, embedding_size]
-    dot product 후 softmax
+    context_embedding: [batch, embedding_dim]
+    candidate_embeddings: [num_candidates, embedding_dim]
+
+    softmax 확률 계산:
+    P(x_c|context) = exp(context·x_c) / Σ_x exp(context·x)
     """
-    # (batch, emb) dot (emb, num_answers) -> (batch, num_answers)
-    scores = torch.matmul(question_embedding, answer_embeddings.T)
-    probs = F.softmax(scores, dim=1)  # 확률화
+    scores = torch.matmul(context_embedding, candidate_embeddings.T)  # [batch, num_candidates]
+    probs = F.softmax(scores, dim=1)  # 확률로 변환
     return probs
 
-def fill_in_blank_inference(model, batch, device, direction=2):
-    """
-    model: PolyvoreLSTMModel(mode='inference') 인스턴스
-    batch: {'texts': [batch, seq_len, 512], 'images': [...], 'question': {'blank_position', 'answer'}}
-    direction: 1 (forward), -1 (backward), 2 (bidirectional)
-    """
-    texts = batch['texts'].to(device)
-    images = batch['images'].to(device)
-    blank_idx = batch['question']['blank_position'].item() - 1  # 0-based index
-    answer_sheet = batch['question']['answer']  # list of 4 candidates: [(set_id_idx, ), ...]
-    lengths = torch.tensor([texts.size(1)-1], dtype=torch.long).to(device)  # blank 제거 후 길이
+def inference(model, test_dataloader, checkpoint_path, device, embedding_size=512):
+    # 모델 체크포인트 로드
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
 
-    # blank 제거한 질문 시퀀스
-    q_texts, q_images = pick_questions(texts, images, blank_idx)
+    correct = 0
+    total = 0
 
-    # 모델 추론
-    rnn_output_embeddings = model(q_images, q_texts, lengths)  # inference 모드 -> rnn_output_embeddings만 반환
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(test_dataloader):
+            texts = batch['texts'].to(device)   # [batch, seq_len, embedding_dim]
+            images = batch['images'].to(device)
+            question = batch['question'][0]  # 단일 question 처리 가정
+            blank_pos = question['blank_position']  # blank position (1-based)
+            blank_idx = blank_pos - 1  # 0-based index
+            answer_texts = batch['answer_texts'].to(device)  # [num_candidates, embedding_dim]
+            answer_images = batch['answer_images'].to(device)  # [num_candidates, embedding_dim]
 
-    # 질문 임베딩 추출
-    question_embedding = get_question_embedding(rnn_output_embeddings, blank_idx, direction=direction)
+            # 후보 임베딩 계산 (text+image 평균화)
+            answer_embeddings = (answer_texts + answer_images) / 2.0  # [num_candidates, embedding_dim]
 
-    # 답변 후보 임베딩 추출 (가정: answer_embeddings를 미리 얻을 수 있음)
-    # answer_sheet: 예) [('100_3',), ('100_5',), ('200_1',), ('300_2',)]
-    # 각 답변에 대해 image+text를 하나의 아이템으로 처리 -> (512+512)=1024차원 임베딩 가정
-    # 여기서는 단순히 answer_embeddings를 미리 준비했다고 가정
-    # answer_embeddings: [4, embedding_size]
+            # forward/backward 시퀀스 분리
+            forward_texts, forward_images, backward_texts, backward_images = pick_questions_v3(texts, images, blank_idx)
 
-    answer_embeddings = []
-    for ans in answer_sheet:
-        # ans: ('setid_idx',)
-        value = ans[0]
-        set_id, idx = value.split('_')
-        set_id = int(set_id)
-        idx = int(idx)
-        # test_dataset를 통해 답변 아이템 임베딩 가져오기 가정 (image+text concat)
-        # answer_item_embedding = ... # shape: [1024]
-        # 여기서는 가짜 임베딩:
-        answer_item_embedding = torch.randn(1, model.embedding_size).to(device)
-        answer_embeddings.append(answer_item_embedding)
+            # forward_context 계산 여부
+            use_forward = (blank_idx > 1)  # blank가 첫 아이템이 아니면 forward 사용 가능
+            # backward_context 계산 여부
+            use_backward = (blank_idx < texts.size(1))  # blank가 마지막 아이템이 아니면 backward 사용 가능
 
-    answer_embeddings = torch.cat(answer_embeddings, dim=0)  # [4, embedding_size]
+            # forward_context
+            if use_forward:
+                forward_context = model.forward_only(forward_texts, forward_images)  # [batch, emb_dim]
+            else:
+                forward_context = None
 
-    probs = compute_scores(question_embedding, answer_embeddings)  # [1,4]
-    predicted_answer = torch.argmax(probs, dim=1)  # 정답 인덱스
-    return predicted_answer.item()
+            # backward_context
+            if use_backward:
+                rev_backward_texts = torch.flip(backward_texts, dims=[1])
+                rev_backward_images = torch.flip(backward_images, dims=[1])
+                backward_context = model.forward_only(rev_backward_texts, rev_backward_images)  # [batch, emb_dim]
+            else:
+                backward_context = None
 
-### 사용 예시
-# model = PolyvoreLSTMModel(mode='inference', ...)
-# model.to(device)
-# model.eval()
-# batch = next(iter(test_loader)) # 예시
-# answer_idx = fill_in_blank_inference(model, batch, device, direction=2)
-# print("Predicted answer index:", answer_idx)
+            # forward/backward 확률 계산
+            if use_forward and use_backward:
+                # 둘 다 사용
+                forward_probs = compute_probs(forward_context, answer_embeddings)
+                backward_probs = compute_probs(backward_context, answer_embeddings)
+                total_probs = forward_probs + backward_probs
+            elif use_forward:
+                # forward만 사용
+                total_probs = compute_probs(forward_context, answer_embeddings)
+            elif use_backward:
+                # backward만 사용
+                total_probs = compute_probs(backward_context, answer_embeddings)
+            else:
+                # forward도 backward도 없으면
+                print("No forward or backward context available.")
+                total_probs = torch.ones(1, len(answer_embeddings), device=device) / len(answer_embeddings)
+
+            # argmax로 최종 후보 선택
+            pred_idx = torch.argmax(total_probs, dim=1).item()
+            predicted_answer = question['answer'][pred_idx]
+
+            # 정답 검증
+            if predicted_answer == question['answer'][0]:
+                correct += 1
+            total += 1
+
+            print(f"Batch {batch_idx+1}: Predicted Answer = {predicted_answer}, Correct: {question['answer'][0]}")
+
+    accuracy = correct / total * 100
+    print(f"########### Final Accuracy: {accuracy:.2f}% ({correct}/{total}) ###########")
+    return accuracy
+
+# 사용 예시
+if __name__ == '__main__':
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    checkpoint_path = "checkpoints/checkpoint_12062101.pth"  # 저장된 체크포인트 경로
+
+    base_dir = os.getcwd()
+    data_dir = os.path.join(base_dir, 'data')
+    meta_dir = os.path.join(data_dir, 'meta')
+    image_dir = os.path.join(data_dir, 'images')
+    sampler = DataSampler(data_path = meta_dir, k=150, test_sampling_ratio=1)
+    concat_df, question_data = sampler.sample_data()
+    test_dataset = MultiModalData(concat_df, sampler.category_df, image_dir, question = question_data, mode='test')
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)  # test_dataset은 이미 로드된 상태 가정
+
+    # 모델 초기화
+    model = PolyvoreLSTMModel(mode='inference', embedding_size=512, hidden_dim=256).to(device)
+
+    # 추론 실행
+    inference(model, test_dataloader, checkpoint_path, device)
