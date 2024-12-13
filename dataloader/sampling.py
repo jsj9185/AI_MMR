@@ -5,7 +5,7 @@ class DataSampler:
     """
     Arguements: ~
     """
-    def __init__(self, data_path, k=100, train_sampling_ratio=1.0, test_sampling_ratio = 0.33):
+    def __init__(self, data_path, k=100, train_sampling_ratio=0.5, test_sampling_ratio = 1.0):
         self.data_path = data_path
         self.k = k
         self.train_sampling_ratio = train_sampling_ratio
@@ -62,7 +62,7 @@ class DataSampler:
         self.top_categories = self._get_top_categories(self.train)
         self.train = self._filter_data(self.train)
         self.valid = self._filter_data(self.valid)
-        #self.test = self._filter_data(self.test)
+        self.test = self.test[['name', 'items', 'desc', 'set_id']]
 
         self.train = self.train.sample(frac=self.train_sampling_ratio, random_state=42)
         self.test = self.test.sample(frac=self.test_sampling_ratio, random_state=42)

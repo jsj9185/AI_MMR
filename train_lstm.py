@@ -12,17 +12,6 @@ from model.multilstm import PolyvoreLSTMModel
 import warnings
 warnings.filterwarnings("ignore", message=".*Torch was not compiled with flash attention.*")
 
-class Config:
-    embedding_size = 512
-    hidden_dim = 256
-    num_layers = 1
-    dropout = 0.5
-    learning_rate = 0.001
-    num_epochs = 10
-    batch_size = 16
-    contrastive_loss_factor = 1.0
-
-
 def collate_fn(batch):
     """
     배치 내 데이터를 패딩 처리하고 필요한 키로 구성된 dictionary 반환.
@@ -59,11 +48,11 @@ def train(model, dataloader, optimizer, device):
         optimizer.zero_grad()
 
         # 모델 호출: 정규화 및 loss 계산 모두 모델 내부에서 처리
-        _, loss = model(
+        loss = model(
             image_embeddings=image_embeddings,
             text_embeddings=seq_embeddings,
             lengths=lengths,
-            mask=mask
+            #mask=mask
         )
 
         loss.backward()
@@ -88,29 +77,39 @@ def validate(model, dataloader, device):
             mask = batch['mask'].to(device)
 
             # 모델 호출: loss 계산
-            _, loss = model(
+            loss = model(
                 image_embeddings=image_embeddings,
                 text_embeddings=seq_embeddings,
                 lengths=lengths,
-                mask=mask
+                #mask=mask
             )
 
             total_loss += loss.item()
 
     return total_loss / len(dataloader)
 
+class Config:
+    embedding_size = 512
+    hidden_dim = 512
+    num_layers = 3
+    dropout = 0.5
+    learning_rate = 0.005
+    num_epochs = 30
+    batch_size = 16
+    #contrastive_loss_factor = 1.0
+    category_k = 150
 
 def main():
     config = Config()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("################ Code Start ################")
+    print("################ Code Start ################\n")
     # 모델 초기화
     model = PolyvoreLSTMModel(
         embedding_size=config.embedding_size,
         hidden_dim=config.hidden_dim,
         num_layers=config.num_layers,
         dropout=config.dropout,
-        contrastive_loss_factor=config.contrastive_loss_factor,
+        #contrastive_loss_factor=config.contrastive_loss_factor,
         mode='train'
     ).to(device)
     print("################ Model Loaded ################\n")
@@ -125,9 +124,8 @@ def main():
     image_dir = os.path.join(data_dir, 'images')
     #print("Trial 4")
 
-    sampler = DataSampler(data_path=meta_dir, k=40, test_sampling_ratio=1)
+    sampler = DataSampler(data_path=meta_dir, k=config.category_k, test_sampling_ratio=1)
     concat_df, question_data = sampler.sample_data()
-    concat_df = concat_df.iloc[1:, :]
 
     train_dataset = MultiModalData(concat_df, sampler.category_df, image_dir, mode='train')
     valid_dataset = MultiModalData(concat_df, sampler.category_df, image_dir, mode='valid')
@@ -142,7 +140,7 @@ def main():
     print("################ Train Start ################\n")
 
     # 학습 루프
-    best_loss = 1000.0
+    best_loss = 100.0
     current_time = datetime.now().strftime("%m%d%H%M")
     checkpoints_dir = os.path.join(base_dir, 'checkpoints')
     checkpoint_dir = os.path.join(checkpoints_dir, f'checkpoint_{current_time}')
@@ -167,7 +165,7 @@ def main():
                 }, 
                 os.path.join(checkpoint_dir, "best_checkpoint.pth")
             )
-            print(f"Checkpoint saved to {checkpoint_dir}\n")
+            print(f"Checkpoint saved to {checkpoint_dir}")
 
 if __name__ == '__main__':
     main()

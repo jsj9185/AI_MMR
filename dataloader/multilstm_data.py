@@ -14,6 +14,7 @@ class MultiModalData(Dataset):
         model, preprocess = clip.load("ViT-B/32", device=self.device)
         self.preprocess = preprocess
         self.model = model
+        self.embedding_size = 512
         self.count1=0
         self.count2=0
 
@@ -111,7 +112,7 @@ class MultiModalData(Dataset):
                     # 해당 set_id에 해당하는 row 찾기
                     ans_set_idx = self.set_id_search_dict.get(ans_set_id, None)
                     if ans_set_idx is None:
-                        print(f"Warning: set_id {ans_set_id} not found, skipping candidate {ans_id}")
+                        #print(f"Warning: set_id {ans_set_id} not found, skipping candidate {ans_id}")
                         self.count1+=1
                         continue
 
@@ -120,7 +121,7 @@ class MultiModalData(Dataset):
 
                     if ans_item_idx > len(ans_items):
                         self.count2+=1
-                        print(f"Warning: item idx {ans_item_idx} out of range for set_id {ans_set_id}, skipping {ans_id}")
+                        #print(f"Warning: item idx {ans_item_idx} out of range for set_id {ans_set_id}, skipping {ans_id}")
                         continue
 
                     ans_item = ans_items[ans_item_idx - 1]
@@ -144,13 +145,10 @@ class MultiModalData(Dataset):
             if answer_texts:
                 answer_text_input = clip.tokenize(answer_texts).to(self.device)
                 answer_text_emb = self.model.encode_text(answer_text_input)
-            else:
-                answer_text_emb = torch.empty(0, device=self.device)
 
             if answer_images:
                 answer_images_emb = torch.cat(answer_images, dim=0)  # [num_answers, emb_dim]
-            else:
-                answer_images_emb = torch.empty(0, device=self.device)
+
 
             return {
                 'texts': texts.float(),

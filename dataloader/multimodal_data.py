@@ -79,7 +79,6 @@ class MultiModalData(Dataset):
             price_list += [-1] * (8 - max_length)
             likes_list += [-1] * (8 - max_length)
         
-        
         L, D = texts.shape
 
         assert(L == 8)
